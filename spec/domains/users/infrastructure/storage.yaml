@@ -1,0 +1,178 @@
+tables:
+  - name: users
+    description: User identity and profile data
+    entity: User
+    
+    # ============================================
+    # CONFIGURATION
+    # ============================================
+    billing_mode: PAY_PER_REQUEST
+    deletion_protection: true
+    point_in_time_recovery: true
+    
+    # ============================================
+    # SCHEMA
+    # ============================================
+    attributes:
+      # Primary key
+      - name: userId
+        type: S
+        description: Primary key - UUID v4
+      
+      # Indexed attributes (required for GSIs)
+      - name: email
+        type: S
+        description: User email (unique)
+      
+      - name: status
+        type: S
+        description: User status (active/suspended/pending_verification/deleted)
+      
+      - name: entityType
+        type: S
+        description: Fixed value "USER" for all user records
+      
+      - name: createdAt
+        type: S
+        description: ISO 8601 timestamp
+      
+      # Non-indexed attributes (application-managed)
+      - name: passwordHash
+        type: S
+        description: Bcrypt hash
+      
+      - name: firstName
+        type: S
+        description: User's first name
+      
+      - name: lastName
+        type: S
+        description: User's last name
+      
+      - name: phoneNumber
+        type: S
+        description: Optional phone number (E.164 format)
+      
+      - name: metadata
+        type: M
+        description: Custom key-value pairs
+      
+      - name: updatedAt
+        type: S
+        description: ISO 8601 timestamp
+      
+      - name: lastLoginAt
+        type: S
+        description: ISO 8601 timestamp (optional)
+      
+      - name: ttl
+        type: N
+        description: Unix timestamp for TTL expiration
+    
+    # ============================================
+    # KEYS & INDEXES
+    # ============================================
+    primary_key:
+      partition_key: userId
+      sort_key: null
+    
+    global_secondary_indexes:
+      - name: email-index
+        partition_key: email
+        sort_key: null
+        projection_type: ALL
+        description: Fast lookup by email (login, duplicate check)
+      
+      - name: status-created-index
+        partition_key: status
+        sort_key: createdAt
+        projection_type: ALL
+        description: Filter users by status and sort by creation date
+      
+      - name: all-users-index
+        partition_key: entityType
+        sort_key: createdAt
+        projection_type: ALL
+        description: List all users with pagination
+        notes: Single partition design, suitable for <100K users
+    
+    local_secondary_indexes: []
+    
+    # ============================================
+    # FEATURES
+    # ============================================
+    ttl:
+      enabled: true
+      attribute: ttl
+      description: Auto-delete soft-deleted users after 90 days
+    
+    encryption:
+      at_rest: AWS_MANAGED_KMS
+      in_transit: TLS
+      kms_key_arn: null  # AWS managed key
+    
+    streams:
+      enabled: false
+      view_type: null
+    
+    # ============================================
+    # CAPACITY & MONITORING
+    # ============================================
+    capacity_planning:
+      assumptions:
+        total_users: 100_000
+        avg_item_size_kb: 2
+        growth_rate: 10% per month
+      
+      estimated_throughput:
+        base_table:
+          reads_per_second: 100
+          writes_per_second: 50
+        
+        gsi_email_index:
+          reads_per_second: 50
+          writes_per_second: 10
+        
+        gsi_status_index:
+          reads_per_second: 20
+          writes_per_second: 5
+        
+        gsi_all_users_index:
+          reads_per_second: 10
+          writes_per_second: 5
+      
+      storage_estimate:
+        base_table: 2GB
+        per_gsi: 2GB
+        total: 8GB
+    
+    monitoring:
+      cloudwatch_alarms:
+        - metric: ConsumedReadCapacityUnits
+          threshold: 80%
+        - metric: ConsumedWriteCapacityUnits
+          threshold: 80%
+        - metric: UserErrors
+          threshold: ">10 in 5 minutes"
+    
+    # ============================================
+    # COMPLIANCE & TAGS
+    # ============================================
+    tags:
+      DataClassification: PII
+      Compliance: GDPR,SOC2
+      RetentionPeriod: 7years
+      CostCenter: identity-platform
+      Owner: idp-team@company.com
+      Domain: users
+      ManagedBy: Terraform
+    
+    compliance:
+      gdpr:
+        - Right to deletion via soft delete + TTL
+        - Data portability via list-users API
+        - Encryption at rest and in transit
+      soc2:
+        - CloudWatch logs for all access
+        - PITR + daily snapshots (35 days)
+        - IAM-based access control

@@ -1,0 +1,267 @@
+functions:
+  - name: users-create
+    description: Create a new user
+    
+    use_case: UC-USERS-001
+    api_operation: createUser
+    
+    runtime: provided.al2023  # Custom runtime for Go
+    architecture: arm64       # Graviton2 for better price/performance
+    handler: bootstrap        # Go Lambda requires "bootstrap" as handler
+    source: lambda/users/create-user
+    
+    memory: 512
+    timeout: 30
+    
+    environment:
+      USERS_TABLE_NAME: "${dynamodb.users_table.name}"
+      LOG_LEVEL: INFO
+      AWS_REGION: us-east-1
+    
+    vpc:
+      enabled: false
+    
+    reserved_concurrent_executions: 100
+    
+    permissions:
+      dynamodb:
+        - table: users
+          actions: [PutItem, GetItem]
+    
+    triggers:
+      - type: api-gateway
+        method: POST
+        path: /users
+        authorization: JWT
+        throttling:
+          burst_limit: 100
+          rate_limit: 50
+    
+    build:
+      command: |
+        GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bootstrap main.go
+        zip function.zip bootstrap
+    
+    monitoring:
+      cloudwatch:
+        log_retention_days: 30
+      
+      xray:
+        enabled: true
+        sampling_rate: 0.1
+      
+      alarms:
+        - name: HighErrorRate
+          metric: Errors
+          threshold: 10
+          period: 300
+          evaluation_periods: 2
+          statistic: Sum
+        
+        - name: HighDuration
+          metric: Duration
+          threshold: 10000
+          period: 60
+          evaluation_periods: 3
+          statistic: Average
+
+  - name: users-get
+    description: Get user by ID
+    use_case: UC-USERS-002
+    api_operation: getUser
+    
+    runtime: provided.al2023
+    architecture: arm64
+    handler: bootstrap
+    source: lambda/users/get-user
+    
+    memory: 256
+    timeout: 10
+    
+    environment:
+      USERS_TABLE_NAME: "${dynamodb.users_table.name}"
+      LOG_LEVEL: INFO
+      AWS_REGION: us-east-1
+    
+    reserved_concurrent_executions: 200
+    
+    permissions:
+      dynamodb:
+        - table: users
+          actions: [GetItem, Query]
+    
+    triggers:
+      - type: api-gateway
+        method: GET
+        path: /users/{userId}
+        authorization: JWT
+        throttling:
+          burst_limit: 200
+          rate_limit: 100
+        
+        cache:
+          enabled: true
+          ttl: 300
+    
+    build:
+      command: |
+        GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bootstrap main.go
+        zip function.zip bootstrap
+    
+    monitoring:
+      cloudwatch:
+        log_retention_days: 14
+      xray:
+        enabled: true
+        sampling_rate: 0.05
+
+  - name: users-list
+    description: List users with pagination
+    use_case: UC-USERS-003
+    api_operation: listUsers
+    
+    runtime: provided.al2023
+    architecture: arm64
+    handler: bootstrap
+    source: lambda/users/list-users
+    
+    memory: 512
+    timeout: 30
+    
+    environment:
+      USERS_TABLE_NAME: "${dynamodb.users_table.name}"
+      LOG_LEVEL: INFO
+      AWS_REGION: us-east-1
+    
+    reserved_concurrent_executions: 50
+    
+    permissions:
+      dynamodb:
+        - table: users
+          actions: [Scan, Query]
+    
+    triggers:
+      - type: api-gateway
+        method: GET
+        path: /users
+        authorization: JWT
+        throttling:
+          burst_limit: 50
+          rate_limit: 25
+    
+    build:
+      command: |
+        GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bootstrap main.go
+        zip function.zip bootstrap
+
+  - name: users-update
+    description: Update user information
+    use_case: UC-USERS-004
+    api_operation: updateUser
+    
+    runtime: provided.al2023
+    architecture: arm64
+    handler: bootstrap
+    source: lambda/users/update-user
+    
+    memory: 512
+    timeout: 30
+    
+    environment:
+      USERS_TABLE_NAME: "${dynamodb.users_table.name}"
+      LOG_LEVEL: INFO
+      AWS_REGION: us-east-1
+    
+    reserved_concurrent_executions: 100
+    
+    permissions:
+      dynamodb:
+        - table: users
+          actions: [GetItem, UpdateItem]
+    
+    triggers:
+      - type: api-gateway
+        method: PATCH
+        path: /users/{userId}
+        authorization: JWT
+        throttling:
+          burst_limit: 100
+          rate_limit: 50
+    
+    build:
+      command: |
+        GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bootstrap main.go
+        zip function.zip bootstrap
+    
+    monitoring:
+      cloudwatch:
+        log_retention_days: 30
+      xray:
+        enabled: true
+
+  - name: users-delete
+    description: Delete user (soft delete)
+    use_case: UC-USERS-005
+    api_operation: deleteUser
+    
+    runtime: provided.al2023
+    architecture: arm64
+    handler: bootstrap
+    source: lambda/users/delete-user
+    
+    memory: 512
+    timeout: 30
+    
+    environment:
+      USERS_TABLE_NAME: "${dynamodb.users_table.name}"
+      LOG_LEVEL: INFO
+      AWS_REGION: us-east-1
+    
+    reserved_concurrent_executions: 50
+    
+    permissions:
+      dynamodb:
+        - table: users
+          actions: [GetItem, UpdateItem]  # Soft delete uses UpdateItem
+    
+    triggers:
+      - type: api-gateway
+        method: DELETE
+        path: /users/{userId}
+        authorization: JWT
+        throttling:
+          burst_limit: 50
+          rate_limit: 25
+    
+    build:
+      command: |
+        GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bootstrap main.go
+        zip function.zip bootstrap
+    
+    monitoring:
+      cloudwatch:
+        log_retention_days: 90  # Compliance requirement
+      xray:
+        enabled: true
+
+# Go-specific configurations
+go_config:
+  version: "1.23"  # Go version
+  
+  build_flags:
+    - "-tags lambda.norpc"
+    - "-ldflags=-s -w"  # Strip debug info for smaller binary
+  
+  dependencies:
+    - github.com/aws/aws-lambda-go/lambda
+    - github.com/aws/aws-lambda-go/events
+    - github.com/aws/aws-sdk-go-v2/service/dynamodb
+    - github.com/aws/aws-sdk-go-v2/config
+    - github.com/google/uuid
+    - golang.org/x/crypto/bcrypt
+  
+  performance_notes:
+    - Using ARM64 (Graviton2) for 20% better price/performance
+    - Cold start: ~150ms (vs ~800ms for Python)
+    - Memory footprint: ~50MB (vs ~150MB for Python)
+    - Custom runtime reduces overhead

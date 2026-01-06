@@ -1,0 +1,35 @@
+# IAM Roles and Policies for Users Domain
+
+iam_roles:
+  - name: users-lambda-execution-role
+    description: Execution role for all Users Lambda functions
+    service: lambda.amazonaws.com
+    
+    managed_policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSXRayDaemonWriteAccess
+    
+    inline_policies:
+      - name: dynamodb-access
+        actions:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:UpdateItem
+          - dynamodb:DeleteItem
+          - dynamodb:Query
+          - dynamodb:Scan
+        resources:
+          - "arn:aws:dynamodb:*:*:table/idp-users"
+          - "arn:aws:dynamodb:*:*:table/idp-users/index/*"
+      
+      - name: eventbridge-access
+        actions:
+          - events:PutEvents
+        resources:
+          - "arn:aws:events:*:*:event-bus/idp-event-bus"
+
+resource_policies:
+  - resource: lambda
+    allow:
+      - principal: apigateway.amazonaws.com
+        action: lambda:InvokeFunction

@@ -1,0 +1,89 @@
+domain: users
+version: 1.0.0
+status: active
+
+description: |
+  User identity and profile management domain.
+  Handles the complete user lifecycle from creation to deletion.
+
+bounded_context: IdP
+team:
+  name: identity-platform-team
+  slack: "#team-identity"
+  email: idp-team@company.com
+
+responsibilities:
+  - User lifecycle management (CRUD)
+  - Profile data management
+  - Email verification workflow
+  - User status transitions
+
+business_rules:
+  - rule: BR-USERS-001
+    description: Email must be unique across the system
+  
+  - rule: BR-USERS-002
+    description: Passwords must meet complexity requirements
+  
+  - rule: BR-USERS-003
+    description: All user operations must be audited
+  
+  - rule: BR-USERS-004
+    description: Deleted users are soft-deleted with 90-day retention
+
+dependencies:
+  upstream:
+    - domain: audit
+      type: event
+      description: Publishes events for audit logging
+    
+    - domain: sessions
+      type: command
+      description: Terminates sessions on user deletion
+  
+  downstream:
+    - domain: authentication
+      type: query
+      description: Provides user data for login
+    
+    - domain: authorization
+      type: query
+      description: Provides user identity for permission checks
+
+entities:
+  - User:
+      description: Core user identity entity
+      attributes:
+        - userId (PK)
+        - email (unique)
+        - passwordHash
+        - firstName
+        - lastName
+        - status
+        - createdAt
+        - updatedAt
+
+events:
+  published:
+    - UserCreated
+    - UserUpdated
+    - UserDeleted
+    - UserSuspended
+    - EmailVerified
+  
+  consumed: []
+
+api:
+  base_path: /api/v1/users
+  authentication: JWT
+  rate_limit: 100/minute
+
+infrastructure:
+  compute: AWS Lambda (5 functions)
+  storage: DynamoDB (1 table)
+  events: EventBridge
+  monitoring: CloudWatch + X-Ray
+
+compliance:
+  - GDPR
+  - SOC2-Type-II

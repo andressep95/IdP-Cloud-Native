@@ -1,0 +1,192 @@
+id: UC-USERS-001
+name: create-user
+domain: users
+version: 1.0.0
+
+actor: [customer, admin]
+description: Create a new user account in the identity provider system
+
+triggers:
+  - User registration form submission
+  - Admin creates user via portal
+  - System-to-system user provisioning
+
+preconditions:
+  - Email does not already exist
+  - Actor has permission to create users
+  - Valid authentication token provided (except for self-registration)
+
+input:
+  schema:
+    type: object
+    required:
+      - email
+      - password
+      - firstName
+      - lastName
+    properties:
+      email:
+        type: string
+        format: email
+        description: Unique email address
+      password:
+        type: string
+        minLength: 8
+        pattern: "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])"
+        description: Must contain uppercase, lowercase, number, special char
+      firstName:
+        type: string
+        minLength: 1
+        maxLength: 50
+      lastName:
+        type: string
+        minLength: 1
+        maxLength: 50
+      phoneNumber:
+        type: string
+        pattern: "^\\+[1-9]\\d{1,14}$"
+        optional: true
+      metadata:
+        type: object
+        optional: true
+        description: Custom key-value pairs
+
+business-rules:
+  - rule: BR-USERS-001
+    description: Email must be unique across the system
+    validation: Check users table for existing email
+  
+  - rule: BR-USERS-002
+    description: Password must meet complexity requirements
+    validation: Regex pattern match
+  
+  - rule: BR-USERS-003
+    description: User email must be verified within 24 hours
+    enforcement: Job scheduler sends verification email
+  
+  - rule: BR-USERS-004
+    description: New users start in pending_verification status
+    enforcement: Default status on creation
+  
+  - rule: BR-USERS-005
+    description: All user operations must be audited
+    enforcement: Publish event to audit domain
+
+output:
+  success:
+    statusCode: 201
+    headers:
+      Location: /api/v1/users/{userId}
+    schema:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+        status:
+          type: string
+          enum: [pending_verification]
+        createdAt:
+          type: string
+          format: date-time
+        links:
+          type: object
+          properties:
+            self:
+              type: string
+              format: uri
+            verify:
+              type: string
+              format: uri
+  
+  errors:
+    - code: ERR-USERS-001
+      statusCode: 409
+      message: A user with this email already exists
+      details: Email must be unique
+    
+    - code: ERR-USERS-002
+      statusCode: 400
+      message: Password does not meet complexity requirements
+      details: Password must contain uppercase, lowercase, number, and special character
+    
+    - code: ERR-USERS-003
+      statusCode: 400
+      message: Invalid email format
+    
+    - code: ERR-COMMON-401
+      statusCode: 401
+      message: Invalid or missing authentication token
+
+postconditions:
+  - User record created in users table
+  - Password hashed using bcrypt (cost 12)
+  - Verification token generated and stored
+  - Verification email queued for sending
+  - UserCreated event published to event bus
+  - Audit log entry created
+
+side-effects:
+  events:
+    - name: UserCreated
+      target: event-bus
+      payload:
+        userId: string
+        email: string
+        createdBy: string
+        timestamp: datetime
+  
+  notifications:
+    - type: email
+      template: user-verification
+      recipient: user.email
+  
+  audit:
+    - action: USER_CREATED
+      severity: INFO
+      retention: 7-years
+
+performance-requirements:
+  response-time-p95: 500ms
+  throughput: 100 requests/second
+
+security:
+  authentication: required (except self-registration)
+  authorization: 
+    - role: customer (self-registration only)
+    - role: admin (any user creation)
+  rate-limiting: 10 requests/minute per IP (self-registration)
+  data-classification: PII
+
+testing:
+  unit-tests:
+    - Validate password complexity
+    - Check email uniqueness
+    - Verify password hashing
+  
+  integration-tests:
+    - End-to-end user creation flow
+    - Event publication verification
+    - Email sending confirmation
+  
+  edge-cases:
+    - Duplicate email during concurrent requests
+    - Special characters in names
+    - Very long metadata objects
+
+dependencies:
+  external-services:
+    - service: email-service
+      purpose: Send verification email
+      fallback: Queue for retry
+    
+    - service: event-bus
+      purpose: Publish UserCreated event
+      fallback: Write to dead-letter queue
+  
+  internal-domains:
+    - domain: audit
+      use-case: log-event
+      required: true

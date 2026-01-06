@@ -1,0 +1,190 @@
+id: UC-USERS-003
+name: list-users
+domain: users
+version: 1.0.0
+
+actor: [admin, system]
+description: Retrieve a paginated list of users with optional filtering
+
+triggers:
+  - Admin accesses user management dashboard
+  - System needs to bulk process users
+  - Export user data for reporting
+
+preconditions:
+  - Actor has admin or system privileges
+  - Valid authentication provided
+
+input:
+  schema:
+    type: object
+    properties:
+      status:
+        type: string
+        enum: [active, suspended, pending_verification, deleted, all]
+        optional: true
+        default: all
+        description: Filter users by status. Use "all" to get all users.
+      
+      limit:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+        optional: true
+        description: Number of items per page
+      
+      nextToken:
+        type: string
+        optional: true
+        description: |
+          Pagination token from previous response.
+          Base64-encoded DynamoDB LastEvaluatedKey.
+          Omit for first page.
+      
+      sortOrder:
+        type: string
+        enum: [asc, desc]
+        default: desc
+        optional: true
+        description: Sort order by creation date
+
+business-rules:
+  - rule: BR-USERS-LIST-001
+    description: Maximum page size is 100 items
+    validation: limit <= 100
+  
+  - rule: BR-USERS-LIST-002
+    description: Invalid nextToken returns 400 error
+    validation: Base64-decodable and valid DynamoDB key format
+  
+  - rule: BR-USERS-LIST-003
+    description: Filtering by status uses status-created-index GSI
+    enforcement: Query on status-created-index when status != "all"
+  
+  - rule: BR-USERS-LIST-004
+    description: Listing all users uses all-users-index GSI
+    enforcement: Query on all-users-index when status = "all"
+
+output:
+  success:
+    statusCode: 200
+    schema:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+                format: uuid
+              email:
+                type: string
+              firstName:
+                type: string
+              lastName:
+                type: string
+              status:
+                type: string
+              createdAt:
+                type: string
+                format: date-time
+        
+        pagination:
+          type: object
+          properties:
+            limit:
+              type: integer
+              description: Items per page (same as request)
+            
+            count:
+              type: integer
+              description: Number of items in current page
+            
+            nextToken:
+              type: string
+              optional: true
+              description: |
+                Token for next page. Omitted if no more pages.
+                Pass this value as nextToken in subsequent request.
+            
+            hasMore:
+              type: boolean
+              description: True if more pages available
+  
+  errors:
+    - code: ERR-USERS-400
+      statusCode: 400
+      message: Invalid pagination token
+      details: nextToken is malformed or expired
+    
+    - code: ERR-USERS-400
+      statusCode: 400
+      message: Invalid limit value
+      details: limit must be between 1 and 100
+    
+    - code: ERR-COMMON-401
+      statusCode: 401
+      message: Authentication required
+    
+    - code: ERR-COMMON-403
+      statusCode: 403
+      message: Insufficient permissions
+
+postconditions:
+  - Results are ordered by createdAt (desc by default)
+  - Pagination token is valid for 5 minutes
+  - Results are eventually consistent (using GSI)
+
+performance-requirements:
+  response-time-p95: 200ms
+  throughput: 25 requests/second
+
+examples:
+  - name: First page request
+    request:
+      query_params:
+        status: active
+        limit: 20
+    response:
+      statusCode: 200
+      body:
+        data: [...]  # 20 users
+        pagination:
+          limit: 20
+          count: 20
+          nextToken: "eyJ1c2VySWQiOiIxMjMiLCJjcmVhdGVkQXQiOiIyMDI2LTAxLTAxIn0="
+          hasMore: true
+  
+  - name: Second page request
+    request:
+      query_params:
+        status: active
+        limit: 20
+        nextToken: "eyJ1c2VySWQiOiIxMjMiLCJjcmVhdGVkQXQiOiIyMDI2LTAxLTAxIn0="
+    response:
+      statusCode: 200
+      body:
+        data: [...]  # 15 users (last page)
+        pagination:
+          limit: 20
+          count: 15
+          nextToken: null
+          hasMore: false
+  
+  - name: List all users (no filter)
+    request:
+      query_params:
+        status: all
+        limit: 50
+    response:
+      statusCode: 200
+      body:
+        data: [...]
+        pagination:
+          limit: 50
+          count: 50
+          nextToken: "..."
+          hasMore: true

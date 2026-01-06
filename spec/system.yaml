@@ -1,0 +1,33 @@
+system: IdP Cloud Platform
+version: 1.0.0
+description: Enterprise Identity Provider on AWS
+
+architecture:
+  style: serverless-microservices
+  cloud_provider: AWS
+  communication: event-driven
+
+global_config:
+  region: us-east-1
+  environment: dev
+  
+  api:
+    base_url: https://api.idp.cloudcentinel.com
+    version: v1
+    authentication: JWT
+  
+  observability:
+    logging: CloudWatch
+    tracing: X-Ray  # Evaluar si es necesario
+    metrics: CloudWatch Metrics
+
+domains:
+  - users
+  - sessions
+  - authentication      # Future
+  - authorization       # Future
+  - audit               # Future
+
+compliance:
+  - GDPR
+  - SOC2-Type-II

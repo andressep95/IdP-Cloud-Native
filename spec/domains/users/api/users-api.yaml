@@ -1,0 +1,916 @@
+openapi: 3.1.0
+info:
+  title: Users API
+  version: 1.0.0
+  description: |
+    User identity and profile management API.
+    
+    This API provides endpoints for managing user accounts including
+    creation, retrieval, updates, and deletion operations.
+  
+  contact:
+    name: Identity Platform Team
+    email: idp-team@company.com
+  
+  x-domain: users
+  x-bounded-context: IdP
+
+servers:
+  - url: https://api.idp.company.com/v1
+    description: Production
+  - url: https://api.staging.idp.company.com/v1
+    description: Staging
+  - url: http://localhost:3000/v1
+    description: Local development
+
+tags:
+  - name: Users
+    description: User lifecycle management operations
+
+security:
+  - BearerAuth: []
+
+paths:
+  /users:
+    post:
+      operationId: createUser
+      summary: Create a new user
+      description: |
+        Create a new user account in the identity provider system.
+        
+        The user will be created with `pending_verification` status and
+        a verification email will be sent to the provided email address.
+      tags: [Users]
+      
+      # Use case reference
+      x-use-case-id: UC-USERS-001
+      x-use-case-file: spec/domains/users/use-cases/create-user.yaml
+      x-lambda-function: users-create
+      
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+            examples:
+              customerRegistration:
+                summary: Customer self-registration
+                description: Typical user registration flow
+                value:
+                  email: john.doe@example.com
+                  password: SecureP@ss123
+                  firstName: John
+                  lastName: Doe
+              
+              adminCreation:
+                summary: Admin creates user with metadata
+                description: Admin creating user with additional information
+                value:
+                  email: jane.admin@company.com
+                  password: AdminP@ss456
+                  firstName: Jane
+                  lastName: Admin
+                  phoneNumber: "+15551234567"
+                  metadata:
+                    department: Engineering
+                    employeeId: "EMP-001"
+                    role: "Senior Developer"
+      
+      responses:
+        '201':
+          description: User created successfully
+          headers:
+            Location:
+              description: URI of the created user
+              schema:
+                type: string
+                format: uri
+              example: /v1/users/550e8400-e29b-41d4-a716-446655440000
+            
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUserResponse'
+              examples:
+                success:
+                  summary: Successful user creation
+                  value:
+                    userId: 550e8400-e29b-41d4-a716-446655440000
+                    email: john.doe@example.com
+                    status: pending_verification
+                    createdAt: "2026-01-06T10:30:00Z"
+                    links:
+                      self: /v1/users/550e8400-e29b-41d4-a716-446655440000
+                      verify: /v1/users/550e8400-e29b-41d4-a716-446655440000/verify
+        
+        '400':
+          description: Bad request - validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidPassword:
+                  summary: Password doesn't meet requirements
+                  value:
+                    error:
+                      code: ERR-USERS-002
+                      message: Password does not meet complexity requirements
+                      details: Password must contain uppercase, lowercase, number, and special character
+                      requestId: 123e4567-e89b-12d3-a456-426614174000
+                      timestamp: "2026-01-06T10:30:00Z"
+                
+                invalidEmail:
+                  summary: Invalid email format
+                  value:
+                    error:
+                      code: ERR-USERS-003
+                      message: Invalid email format
+                      details: Email must be a valid email address
+                      requestId: 123e4567-e89b-12d3-a456-426614174001
+                      timestamp: "2026-01-06T10:30:00Z"
+        
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        
+        '409':
+          description: Conflict - user already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                duplicateEmail:
+                  summary: Email already registered
+                  value:
+                    error:
+                      code: ERR-USERS-001
+                      message: A user with this email already exists
+                      details: Email must be unique
+                      requestId: 123e4567-e89b-12d3-a456-426614174002
+                      timestamp: "2026-01-06T10:30:00Z"
+        
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    get:
+      operationId: listUsers
+      summary: List users
+      description: |
+        Retrieve a paginated list of users with optional filtering.
+        
+        Results are sorted by creation date (newest first by default).
+        Use the `nextToken` from the response to fetch subsequent pages.
+      tags: [Users]
+      
+      # Use case reference
+      x-use-case-id: UC-USERS-003
+      x-use-case-file: spec/domains/users/use-cases/list-users.yaml
+      x-lambda-function: users-list
+      
+      parameters:
+        - name: status
+          in: query
+          description: Filter users by status
+          required: false
+          schema:
+            type: string
+            enum: [active, suspended, pending_verification, deleted, all]
+            default: all
+          examples:
+            all:
+              value: all
+              summary: All users (no filter)
+            active:
+              value: active
+              summary: Only active users
+            suspended:
+              value: suspended
+              summary: Only suspended users
+        
+        - name: limit
+          in: query
+          description: Number of items per page (1-100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 20
+        
+        - name: nextToken
+          in: query
+          description: |
+            Pagination token from previous response.
+            Base64-encoded, opaque token. Do not attempt to parse or modify.
+          required: false
+          schema:
+            type: string
+          example: "eyJ1c2VySWQiOiIxMjM0NTYiLCJjcmVhdGVkQXQiOiIyMDI2LTAxLTA2VDEwOjAwOjAwWiJ9"
+        
+        - name: sortOrder
+          in: query
+          description: Sort order by creation date
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          examples:
+            desc:
+              value: desc
+              summary: Newest first (default)
+            asc:
+              value: asc
+              summary: Oldest first
+      
+      responses:
+        '200':
+          description: Users retrieved successfully
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListUsersResponse'
+              
+              examples:
+                firstPage:
+                  summary: First page with more results
+                  description: Initial request with 20 items and more pages available
+                  value:
+                    data:
+                      - userId: "550e8400-e29b-41d4-a716-446655440000"
+                        email: "john.doe@example.com"
+                        firstName: "John"
+                        lastName: "Doe"
+                        status: "active"
+                        createdAt: "2026-01-06T10:00:00Z"
+                      - userId: "550e8400-e29b-41d4-a716-446655440001"
+                        email: "jane.smith@example.com"
+                        firstName: "Jane"
+                        lastName: "Smith"
+                        status: "active"
+                        createdAt: "2026-01-05T15:30:00Z"
+                    pagination:
+                      limit: 20
+                      count: 20
+                      nextToken: "eyJ1c2VySWQiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDEiLCJjcmVhdGVkQXQiOiIyMDI2LTAxLTA1VDE1OjMwOjAwWiIsImVudGl0eVR5cGUiOiJVU0VSIn0="
+                      hasMore: true
+                
+                lastPage:
+                  summary: Last page with no more results
+                  description: Final page with fewer items and no next token
+                  value:
+                    data:
+                      - userId: "550e8400-e29b-41d4-a716-446655440099"
+                        email: "last.user@example.com"
+                        firstName: "Last"
+                        lastName: "User"
+                        status: "active"
+                        createdAt: "2025-12-01T08:00:00Z"
+                    pagination:
+                      limit: 20
+                      count: 1
+                      nextToken: null
+                      hasMore: false
+                
+                emptyResult:
+                  summary: No users found
+                  description: Query returned no results
+                  value:
+                    data: []
+                    pagination:
+                      limit: 20
+                      count: 0
+                      nextToken: null
+                      hasMore: false
+                
+                filteredByStatus:
+                  summary: Filtered by status
+                  description: Results filtered to show only suspended users
+                  value:
+                    data:
+                      - userId: "550e8400-e29b-41d4-a716-446655440050"
+                        email: "suspended.user@example.com"
+                        firstName: "Suspended"
+                        lastName: "User"
+                        status: "suspended"
+                        createdAt: "2026-01-03T12:00:00Z"
+                    pagination:
+                      limit: 20
+                      count: 1
+                      nextToken: null
+                      hasMore: false
+        
+        '400':
+          description: Bad request - invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidLimit:
+                  summary: Invalid limit parameter
+                  value:
+                    error:
+                      code: ERR-USERS-400
+                      message: Invalid limit value
+                      details: limit must be between 1 and 100
+                      requestId: 123e4567-e89b-12d3-a456-426614174003
+                      timestamp: "2026-01-06T10:30:00Z"
+                
+                invalidToken:
+                  summary: Invalid pagination token
+                  value:
+                    error:
+                      code: ERR-USERS-400
+                      message: Invalid pagination token
+                      details: nextToken is malformed or expired
+                      requestId: 123e4567-e89b-12d3-a456-426614174004
+                      timestamp: "2026-01-06T10:30:00Z"
+        
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserIdParam'
+    
+    get:
+      operationId: getUser
+      summary: Get user by ID
+      description: Retrieve a specific user's information by their unique identifier
+      tags: [Users]
+      
+      x-use-case-id: UC-USERS-002
+      x-use-case-file: spec/domains/users/use-cases/get-user.yaml
+      x-lambda-function: users-get
+      
+      responses:
+        '200':
+          description: User retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDetailResponse'
+        
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    patch:
+      operationId: updateUser
+      summary: Update user
+      description: Update an existing user's information
+      tags: [Users]
+      
+      x-use-case-id: UC-USERS-004
+      x-use-case-file: spec/domains/users/use-cases/update-user.yaml
+      x-lambda-function: users-update
+      
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateUserResponse'
+        
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        
+        '404':
+          $ref: '#/components/responses/NotFound'
+        
+        '409':
+          $ref: '#/components/responses/Conflict'
+    
+    delete:
+      operationId: deleteUser
+      summary: Delete user
+      description: Soft delete a user account (mark as deleted)
+      tags: [Users]
+      
+      x-use-case-id: UC-USERS-005
+      x-use-case-file: spec/domains/users/use-cases/delete-user.yaml
+      x-lambda-function: users-delete
+      
+      parameters:
+        - name: reason
+          in: query
+          description: Reason for deletion
+          required: false
+          schema:
+            type: string
+          example: "User requested account closure"
+      
+      responses:
+        '204':
+          description: User deleted successfully (no content)
+        
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        
+        '404':
+          $ref: '#/components/responses/NotFound'
+        
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from authentication endpoint.
+        
+        Include in Authorization header as: `Authorization: Bearer <token>`
+
+  parameters:
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      description: Unique identifier of the user (UUID v4)
+      schema:
+        type: string
+        format: uuid
+      example: "550e8400-e29b-41d4-a716-446655440000"
+
+  headers:
+    X-Request-ID:
+      description: Unique request identifier for tracing and debugging
+      schema:
+        type: string
+        format: uuid
+      example: "123e4567-e89b-12d3-a456-426614174000"
+
+  schemas:
+    # ========================================
+    # CREATE USER SCHEMAS
+    # ========================================
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - password
+        - firstName
+        - lastName
+      properties:
+        email:
+          type: string
+          format: email
+          description: Unique email address
+          example: john.doe@example.com
+        
+        password:
+          type: string
+          format: password
+          minLength: 8
+          pattern: "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])"
+          description: |
+            Password must meet complexity requirements:
+            - At least 8 characters
+            - Contains uppercase letter
+            - Contains lowercase letter
+            - Contains number
+            - Contains special character (@$!%*?&)
+          example: SecureP@ss123
+        
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: User's first name
+          example: John
+        
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: User's last name
+          example: Doe
+        
+        phoneNumber:
+          type: string
+          pattern: "^\\+[1-9]\\d{1,14}$"
+          description: Phone number in E.164 format (optional)
+          example: "+15551234567"
+        
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Custom key-value pairs for additional user data
+          example:
+            department: Engineering
+            employeeId: "EMP-001"
+
+    CreateUserResponse:
+      type: object
+      required:
+        - userId
+        - email
+        - status
+        - createdAt
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: Unique identifier for the created user
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        
+        status:
+          type: string
+          enum: [pending_verification]
+          description: User status (always pending_verification for new users)
+          example: pending_verification
+        
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when user was created (ISO 8601)
+          example: "2026-01-06T10:30:00Z"
+        
+        links:
+          type: object
+          description: HATEOAS links for related operations
+          properties:
+            self:
+              type: string
+              format: uri
+              description: Link to this user resource
+              example: /v1/users/550e8400-e29b-41d4-a716-446655440000
+            
+            verify:
+              type: string
+              format: uri
+              description: Link to email verification endpoint
+              example: /v1/users/550e8400-e29b-41d4-a716-446655440000/verify
+
+    # ========================================
+    # LIST USERS SCHEMAS
+    # ========================================
+    ListUsersResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+          description: Array of user summaries
+        
+        pagination:
+          $ref: '#/components/schemas/PaginationResponse'
+
+    UserSummary:
+      type: object
+      required:
+        - userId
+        - email
+        - firstName
+        - lastName
+        - status
+        - createdAt
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: Unique identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        
+        firstName:
+          type: string
+          example: John
+        
+        lastName:
+          type: string
+          example: Doe
+        
+        status:
+          type: string
+          enum: [active, suspended, pending_verification, deleted]
+          example: active
+        
+        createdAt:
+          type: string
+          format: date-time
+          description: When the user was created
+          example: "2026-01-06T10:00:00Z"
+
+    PaginationResponse:
+      type: object
+      required:
+        - limit
+        - count
+        - hasMore
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Requested items per page
+          example: 20
+        
+        count:
+          type: integer
+          minimum: 0
+          description: Actual number of items in current response
+          example: 20
+        
+        nextToken:
+          type: string
+          description: |
+            Token for fetching next page. 
+            Null if no more pages available.
+            This is an opaque, base64-encoded token.
+          example: "eyJ1c2VySWQiOiIxMjM0NTYiLCJjcmVhdGVkQXQiOiIyMDI2LTAxLTA2VDEwOjAwOjAwWiJ9"
+        
+        hasMore:
+          type: boolean
+          description: Indicates if more pages are available
+          example: true
+
+    # ========================================
+    # OTHER OPERATION SCHEMAS (Placeholders)
+    # ========================================
+    UserDetailResponse:
+      type: object
+      description: Full user details (placeholder for UC-USERS-002)
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        status:
+          type: string
+        phoneNumber:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type: string
+          format: date-time
+
+    UpdateUserRequest:
+      type: object
+      description: Update user request (placeholder for UC-USERS-004)
+      minProperties: 1
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phoneNumber:
+          type: string
+        metadata:
+          type: object
+
+    UpdateUserResponse:
+      type: object
+      description: Update user response (placeholder for UC-USERS-004)
+      properties:
+        userId:
+          type: string
+          format: uuid
+        updatedFields:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ========================================
+    # ERROR SCHEMAS
+    # ========================================
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: ERR-USERS-001
+            
+            message:
+              type: string
+              description: Human-readable error message
+              example: A user with this email already exists
+            
+            details:
+              type: string
+              description: Additional error context
+              example: Email must be unique across the system
+            
+            requestId:
+              type: string
+              format: uuid
+              description: Request ID for troubleshooting
+              example: 123e4567-e89b-12d3-a456-426614174000
+            
+            timestamp:
+              type: string
+              format: date-time
+              description: When the error occurred
+              example: "2026-01-06T10:30:00Z"
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: ERR-USERS-400
+              message: Invalid request parameters
+              details: Validation failed
+              requestId: 123e4567-e89b-12d3-a456-426614174000
+              timestamp: "2026-01-06T10:30:00Z"
+
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: ERR-COMMON-401
+              message: Authentication required
+              details: Invalid or missing JWT token
+              requestId: 123e4567-e89b-12d3-a456-426614174000
+              timestamp: "2026-01-06T10:30:00Z"
+
+    Forbidden:
+      description: Insufficient permissions to perform this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: ERR-COMMON-403
+              message: Insufficient permissions
+              details: Admin role required for this operation
+              requestId: 123e4567-e89b-12d3-a456-426614174000
+              timestamp: "2026-01-06T10:30:00Z"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: ERR-USERS-404
+              message: User not found
+              details: No user exists with the provided ID
+              requestId: 123e4567-e89b-12d3-a456-426614174000
+              timestamp: "2026-01-06T10:30:00Z"
+
+    Conflict:
+      description: Resource conflict (e.g., duplicate email)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: ERR-USERS-409
+              message: Resource conflict
+              details: User data has been modified by another process
+              requestId: 123e4567-e89b-12d3-a456-426614174000
+              timestamp: "2026-01-06T10:30:00Z"
+
+    UnprocessableEntity:
+      description: Business rule violation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: ERR-USERS-422
+              message: Business rule violation
+              details: Cannot delete the last admin user
+              requestId: 123e4567-e89b-12d3-a456-426614174000
+              timestamp: "2026-01-06T10:30:00Z"
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          description: Request limit per time window
+          schema:
+            type: integer
+          example: 100
+        
+        X-RateLimit-Remaining:
+          description: Remaining requests in current window
+          schema:
+            type: integer
+          example: 0
+        
+        X-RateLimit-Reset:
+          description: Time when rate limit resets (Unix timestamp)
+          schema:
+            type: integer
+          example: 1704539400
+      
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: ERR-COMMON-429
+              message: Rate limit exceeded
+              details: Maximum 100 requests per minute allowed
+              requestId: 123e4567-e89b-12d3-a456-426614174000
+              timestamp: "2026-01-06T10:30:00Z"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: ERR-INTERNAL-500
+              message: Internal server error
+              details: An unexpected error occurred
+              requestId: 123e4567-e89b-12d3-a456-426614174000
+              timestamp: "2026-01-06T10:30:00Z"

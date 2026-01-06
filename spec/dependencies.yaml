@@ -1,0 +1,26 @@
+# Domain dependencies and interactions
+
+dependencies:
+  - source: users
+    target: sessions
+    type: command
+    description: User deletion terminates active sessions
+    coupling: medium
+  
+  - source: users
+    target: audit
+    type: event
+    description: All user operations are logged
+    coupling: loose
+  
+  - source: sessions
+    target: users
+    type: query
+    description: Session validation checks user status
+    coupling: tight
+
+interaction_rules:
+  - Domains communicate via events (preferred)
+  - Synchronous calls only within bounded context
+  - No circular dependencies allowed
+  - Events must be idempotent

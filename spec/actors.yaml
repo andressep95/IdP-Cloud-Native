@@ -1,0 +1,30 @@
+actors:
+  - name: customer
+    type: external
+    description: End user consuming the platform
+    permissions:
+      - Self-service user management
+      - Own profile access
+    
+  - name: admin
+    type: internal
+    description: Platform administrator
+    permissions:
+      - Full user management
+      - System configuration
+      - Access all resources
+  
+  - name: system
+    type: internal
+    description: Service-to-service communication
+    permissions:
+      - Internal API access
+      - Event publication
+      - Cross-domain queries
+  
+  - name: support
+    type: internal
+    description: Customer support team
+    permissions:
+      - Read-only user access
+      - Assist with user issues
