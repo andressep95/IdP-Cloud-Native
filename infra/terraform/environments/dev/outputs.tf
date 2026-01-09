@@ -1,33 +1,40 @@
 # ============================================
-# Dev Environment - Outputs
+# Global Outputs - Development Environment
 # ============================================
 
-output "users_table_name" {
-  description = "Name of the Users DynamoDB table"
-  value       = module.user_table.table_name
+# Shared Resources
+output "api_gateway_endpoint" {
+  description = "API Gateway endpoint URL"
+  value       = module.shared.api_gateway_endpoint
 }
 
-output "users_table_arn" {
-  description = "ARN of the Users DynamoDB table"
-  value       = module.user_table.table_arn
+output "api_gateway_id" {
+  description = "API Gateway ID"
+  value       = module.shared.api_gateway_id
 }
 
-output "users_table_id" {
-  description = "ID of the Users DynamoDB table"
-  value       = module.user_table.table_id
+# Users Domain
+output "users_dynamodb_table_name" {
+  description = "Users DynamoDB table name"
+  value       = module.users_domain.dynamodb_table_name
 }
 
-output "environment" {
-  description = "Current environment"
-  value       = var.environment
+output "users_dynamodb_table_arn" {
+  description = "Users DynamoDB table ARN"
+  value       = module.users_domain.dynamodb_table_arn
 }
 
-output "using_localstack" {
-  description = "Whether LocalStack is being used"
-  value       = var.use_localstack
+output "users_iam_role_arn" {
+  description = "Users IAM role ARN"
+  value       = module.users_domain.iam_role_arn
 }
 
-output "localstack_endpoint" {
-  description = "LocalStack endpoint URL"
-  value       = var.use_localstack ? var.localstack_endpoint : "N/A"
+output "users_lambda_function_arns" {
+  description = "Users Lambda function ARNs"
+  value       = module.users_domain.lambda_function_arns
+}
+
+output "users_api_endpoint" {
+  description = "Users API Gateway invoke URL"
+  value       = module.users_domain.api_gateway_stage_invoke_url
 }

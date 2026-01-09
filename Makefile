@@ -1,4 +1,4 @@
-.PHONY: help localstack-start localstack-stop init plan apply destroy test-table
+.PHONY: help localstack-start localstack-stop init plan apply destroy test-table build-create-user build-lambdas clean-lambdas deps
 
 help:
 	@echo "IdP Cloud - Development Commands"
@@ -6,6 +6,12 @@ help:
 	@echo "LocalStack:"
 	@echo "  make localstack-start  - Start LocalStack"
 	@echo "  make localstack-stop   - Stop LocalStack"
+	@echo ""
+	@echo "Lambda Build:"
+	@echo "  make deps              - Download Go dependencies"
+	@echo "  make build-lambdas     - Build all Lambda functions"
+	@echo "  make build-create-user - Build create-user Lambda"
+	@echo "  make clean-lambdas     - Clean Lambda build artifacts"
 	@echo ""
 	@echo "Terraform:"
 	@echo "  make init           - Initialize Terraform"
@@ -50,3 +56,31 @@ test-table:
 	@echo ""
 	@echo "Describing users table..."
 	aws dynamodb describe-table --table-name idp-cloud-dev-users --endpoint-url http://localhost:4566 --region us-east-1 --query 'Table.TableName'
+
+# ============================================
+# Lambda Build Commands
+# ============================================
+
+deps:
+	@echo "📦 Downloading Go dependencies..."
+	go mod download
+	go mod tidy
+	@echo "✅ Dependencies ready!"
+
+build-create-user:
+	@echo "🔨 Building create-user Lambda..."
+	cd lambda/users/create-user && \
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o bootstrap . && \
+	zip -q function.zip bootstrap && \
+	rm bootstrap
+	@echo "✅ create-user built"
+
+
+build-lambdas: build-create-user
+	@echo "✅ All Lambda functions built!"
+
+clean-lambdas:
+	@echo "🧹 Cleaning Lambda build artifacts..."
+	find lambda -name "bootstrap" -type f -delete
+	find lambda -name "function.zip" -type f -delete
+	@echo "✅ Lambda artifacts cleaned!"

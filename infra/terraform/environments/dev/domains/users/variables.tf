@@ -1,41 +1,44 @@
 # ============================================
-# Global Variables - Development Environment
+# Users Domain - Variables
 # ============================================
 
 variable "project_name" {
-  description = "Project name for resource naming"
+  description = "Project name"
   type        = string
-  default     = "idp"
 }
 
 variable "environment" {
   description = "Environment name"
   type        = string
-  default     = "dev"
 }
 
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "us-east-1"
 }
 
-# LocalStack configuration
-variable "use_localstack" {
-  description = "Use LocalStack for local development"
-  type        = bool
-  default     = true
+variable "common_tags" {
+  description = "Common tags"
+  type        = map(string)
 }
 
-variable "localstack_endpoint" {
-  description = "LocalStack endpoint URL"
+variable "api_gateway_id" {
+  description = "ID of the shared API Gateway"
   type        = string
-  default     = "http://localhost:4566"
 }
 
-# Dev-specific configuration
+variable "api_gateway_execution_arn" {
+  description = "Execution ARN of the shared API Gateway"
+  type        = string
+}
+
+variable "api_gateway_root_resource_id" {
+  description = "Root resource ID of the shared API Gateway"
+  type        = string
+}
+
 variable "enable_deletion_protection" {
-  description = "Enable deletion protection for resources"
+  description = "Enable deletion protection for DynamoDB"
   type        = bool
   default     = false
 }
@@ -51,9 +54,8 @@ variable "log_level" {
   }
 }
 
-# Common tags
-variable "common_tags" {
-  description = "Common tags for all resources"
-  type        = map(string)
-  default     = {}
+variable "localstack_endpoint" {
+  description = "LocalStack endpoint URL"
+  type        = string
+  default     = "http://localhost:4566"
 }

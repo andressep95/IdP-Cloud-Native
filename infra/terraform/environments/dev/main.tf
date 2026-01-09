@@ -1,6 +1,6 @@
 # ============================================
-# Users Domain - DynamoDB Table
-# Implements: spec/domains/users/infrastructure/storage.yaml
+# Main - Development Environment
+# Orchestrates: Shared Resources + Domains
 # ============================================
 
 terraform {
@@ -14,174 +14,110 @@ terraform {
   }
 }
 
+provider "aws" {
+  region = var.aws_region
 
-# ============================================
-# DynamoDB Table - Users
-# ============================================
+  # LocalStack configuration
+  access_key = var.use_localstack ? "test" : null
+  secret_key = var.use_localstack ? "test" : null
 
-module "user_table" {
-  source = "../../modules/dynamodb"
+  skip_credentials_validation = var.use_localstack
+  skip_metadata_api_check     = var.use_localstack
+  skip_requesting_account_id  = var.use_localstack
 
-
-  # ============================================
-  # BASIC CONFIGURATION
-  # From storage.yaml
-  # ============================================
-
-  # Table naming: {project}-{environment}-{domain}
-  table_name  = "${var.project_name}-${var.environment}-users"
-  environment = var.environment
-
-
-  # ============================================
-  # CONFIGURATION (from storage.yaml)
-  # ============================================
-
-  # billing_mode: PAY_PER_REQUEST
-  billing_mode = "PAY_PER_REQUEST"
-
-  # deletion_protection: true
-  deletion_protection_enabled = var.environment == "prod" ? true : false
-
-  # point_in_time_recovery: true
-  point_in_time_recovery_enabled = true
-
-  # encryption.at_rest: AWS_MANAGED_KMS
-  server_side_encryption_enabled = true
-  kms_key_arn                    = null # AWS managed key
-
-  # ttl.enabled: true
-  ttl_enabled        = true
-  ttl_attribute_name = "ttl"
-
-  # streams.enabled: false
-  stream_enabled   = false
-  stream_view_type = null
-
-
-  # ============================================
-  # PRIMARY KEY (from storage.yaml)
-  # ============================================
-
-  # primary_key.partition_key: userId
-  hash_key = "userId"
-
-  # primary_key.sort_key: null
-  range_key = null
-
-
-  # ============================================
-  # ATTRIBUTES (from storage.yaml)
-  # ONLY indexed attributes (used in keys/GSIs)
-  # ============================================
-
-  attributes = [
-    # Primary key
-    {
-      name = "userId"
-      type = "S" # UUID v4
-    },
-
-    # GSI-1: email-index (partition key)
-    {
-      name = "email"
-      type = "S"
-    },
-
-    # GSI-2: status-created-index (partition key)
-    {
-      name = "status"
-      type = "S"
-    },
-
-    # GSI-3: all-users-index (partition key)
-    {
-      name = "entityType"
-      type = "S"
-    },
-
-    # GSI-2 & GSI-3: sort key
-    {
-      name = "createdAt"
-      type = "S"
+  # Override endpoints for LocalStack
+  dynamic "endpoints" {
+    for_each = var.use_localstack ? [1] : []
+    content {
+      apigateway     = var.localstack_endpoint
+      apigatewayv2   = var.localstack_endpoint
+      cloudformation = var.localstack_endpoint
+      cloudwatch     = var.localstack_endpoint
+      dynamodb       = var.localstack_endpoint
+      ec2            = var.localstack_endpoint
+      iam            = var.localstack_endpoint
+      lambda         = var.localstack_endpoint
+      route53        = var.localstack_endpoint
+      s3             = var.localstack_endpoint
+      secretsmanager = var.localstack_endpoint
+      ses            = var.localstack_endpoint
+      sns            = var.localstack_endpoint
+      sqs            = var.localstack_endpoint
+      ssm            = var.localstack_endpoint
+      stepfunctions  = var.localstack_endpoint
+      sts            = var.localstack_endpoint
     }
-  ]
+  }
 
-
-  # ============================================
-  # NOTE: Non-indexed attributes are NOT defined here
-  # ============================================
-  # These are managed by the application:
-  # - passwordHash (S)
-  # - firstName (S)
-  # - lastName (S)
-  # - phoneNumber (S)
-  # - metadata (M)
-  # - updatedAt (S)
-  # - lastLoginAt (S)
-  # - ttl (N) - used for TTL but not indexed
-
-
-  # ============================================
-  # GLOBAL SECONDARY INDEXES (from storage.yaml)
-  # ============================================
-
-  global_secondary_indexes = [
-    # GSI-1: email-index
-    # Purpose: Fast lookup by email (login, duplicate check)
-    {
-      name            = "email-index"
-      hash_key        = "email"
-      range_key       = null
-      projection_type = "ALL"
-    },
-
-    # GSI-2: status-created-index
-    # Purpose: Filter users by status and sort by creation date
-    {
-      name            = "status-created-index"
-      hash_key        = "status"
-      range_key       = "createdAt"
-      projection_type = "ALL"
-    },
-
-    # GSI-3: all-users-index
-    # Purpose: List all users with pagination
-    # Note: Single partition design, suitable for <100K users
-    {
-      name            = "all-users-index"
-      hash_key        = "entityType"
-      range_key       = "createdAt"
-      projection_type = "ALL"
-    }
-  ]
-
-
-  # ============================================
-  # LOCAL SECONDARY INDEXES (from storage.yaml)
-  # ============================================
-
-  # local_secondary_indexes: []
-  local_secondary_indexes = []
-
-  # ============================================
-  # TAGS (from storage.yaml)
-  # ============================================
-
-  tags = merge(
-    var.common_tags,
-    {
-      # From storage.yaml tags section
-      DataClassification = "PII"
-      Compliance         = "GDPR,SOC2"
-      RetentionPeriod    = "7years"
-      CostCenter         = "identity-platform"
-      Owner              = "idp-team@company.com"
-      Domain             = "users"
-
-      # Additional context
-      SpecFile = "spec/domains/users/infrastructure/storage.yaml"
-    }
-  )
+  default_tags {
+    tags = merge(
+      var.common_tags,
+      {
+        Project     = var.project_name
+        Environment = var.environment
+        ManagedBy   = "Terraform"
+        Repository  = "IdP-Cloud"
+      }
+    )
+  }
 }
 
+# ============================================
+# Data Sources
+# ============================================
+
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+# ============================================
+# Local Variables
+# ============================================
+
+locals {
+  environment  = var.environment
+  project_name = var.project_name
+  aws_region   = var.aws_region
+
+  common_tags = {
+    Project     = local.project_name
+    Environment = local.environment
+    ManagedBy   = "Terraform"
+    Repository  = "IdP-Cloud"
+  }
+}
+
+# ============================================
+# SHARED RESOURCES (API Gateway, VPC, etc)
+# ============================================
+
+module "shared" {
+  source = "./shared"
+
+  project_name = local.project_name
+  environment  = local.environment
+  aws_region   = local.aws_region
+  common_tags  = local.common_tags
+}
+
+# ============================================
+# DOMAIN: Users
+# ============================================
+
+module "users_domain" {
+  source = "./domains/users"
+
+  # Global config
+  project_name = local.project_name
+  environment  = local.environment
+  aws_region   = local.aws_region
+  common_tags  = local.common_tags
+
+  # Shared resources
+  api_gateway_id                = module.shared.api_gateway_id
+  api_gateway_execution_arn     = module.shared.api_gateway_execution_arn
+  api_gateway_root_resource_id  = module.shared.api_gateway_root_resource_id
+
+  # Dev-specific config
+  enable_deletion_protection = var.enable_deletion_protection
+  log_level                  = var.log_level
+}

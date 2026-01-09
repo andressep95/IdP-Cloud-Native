@@ -1,0 +1,357 @@
+# ============================================
+# Observability Infrastructure
+# Dead Letter Queues, SNS Topics, Alarms, Dashboards
+# ============================================
+
+domain: users
+version: 1.0.0
+
+# ============================================
+# Dead Letter Queue (Shared)
+# ============================================
+dlq:
+  name: users-lambda-dlq
+  description: Shared DLQ for all users domain Lambda functions
+  
+  type: sqs
+  
+  configuration:
+    message_retention_seconds: 1209600  # 14 days
+    visibility_timeout_seconds: 300     # 5 minutes
+    max_message_size: 262144           # 256 KB
+    receive_wait_time_seconds: 0       # Short polling
+    delay_seconds: 0
+    
+    encryption:
+      enabled: true
+      type: sqs_managed  # or kms_managed with key_id
+    
+    deduplication:
+      enabled: false  # Set true for FIFO queue
+      content_based: false
+  
+  # Policy allowing all domain Lambdas to send messages
+  access_policy:
+    principals:
+      - service: lambda.amazonaws.com
+    conditions:
+      source_arn_pattern: "arn:aws:lambda:*:*:function:users-*"
+    actions:
+      - sqs:SendMessage
+      - sqs:GetQueueUrl
+  
+  # Tag strategy
+  tags:
+    Domain: users
+    Purpose: lambda-dlq
+    CostCenter: platform
+    Criticality: high
+
+# ============================================
+# SNS Topics (Shared by Severity)
+# ============================================
+sns_topics:
+  - name: users-alerts-critical
+    display_name: "Users Domain - Critical Alerts"
+    description: P1 alerts - DLQ messages, service outages, data integrity issues
+    
+    encryption:
+      enabled: true
+      type: kms
+      key_alias: alias/users-domain-key
+    
+    subscriptions:
+      - protocol: email
+        endpoint: "${var.oncall_email}"
+        environment: [prod, staging]
+      
+      - protocol: email
+        endpoint: "${var.dev_team_email}"
+        environment: [dev]
+      
+      - protocol: lambda
+        endpoint: "${lambda.slack_notifier.arn}"
+        environment: [prod, staging]
+        filter_policy:
+          severity: [critical]
+    
+    tags:
+      Domain: users
+      Severity: critical
+      AlertType: operational
+  
+  - name: users-alerts-warning
+    display_name: "Users Domain - Warning Alerts"
+    description: P2 alerts - high latency, throttling, approaching limits
+    
+    encryption:
+      enabled: true
+      type: kms
+      key_alias: alias/users-domain-key
+    
+    subscriptions:
+      - protocol: email
+        endpoint: "${var.monitoring_team_email}"
+        environment: [prod, staging]
+    
+    tags:
+      Domain: users
+      Severity: warning
+      AlertType: performance
+  
+  - name: users-alerts-info
+    display_name: "Users Domain - Info Alerts"
+    description: P3 alerts - scaling events, deployments, config changes
+    
+    encryption:
+      enabled: false
+    
+    subscriptions:
+      - protocol: email
+        endpoint: "${var.platform_team_email}"
+        environment: [prod]
+    
+    tags:
+      Domain: users
+      Severity: info
+      AlertType: informational
+
+# ============================================
+# CloudWatch Alarms (DLQ Monitoring)
+# ============================================
+alarms:
+  # DLQ Messages Alarm
+  - name: users-dlq-messages
+    description: Alert when ANY message appears in DLQ
+    metric:
+      namespace: AWS/SQS
+      name: ApproximateNumberOfMessagesVisible
+      statistic: Average
+      dimensions:
+        QueueName: "${dlq.name}"
+    
+    threshold: 0  # Alert on first message
+    comparison: GreaterThanThreshold
+    period: 60
+    evaluation_periods: 1
+    datapoints_to_alarm: 1
+    treat_missing_data: notBreaching
+    
+    actions:
+      alarm: ["${sns_topics.users-alerts-critical.arn}"]
+      ok: ["${sns_topics.users-alerts-critical.arn}"]
+    
+    tags:
+      Domain: users
+      AlarmType: dlq-monitoring
+      Severity: critical
+  
+  # DLQ Age of Oldest Message
+  - name: users-dlq-message-age
+    description: Alert when messages sit in DLQ too long
+    metric:
+      namespace: AWS/SQS
+      name: ApproximateAgeOfOldestMessage
+      statistic: Maximum
+      dimensions:
+        QueueName: "${dlq.name}"
+    
+    threshold: 3600  # 1 hour
+    comparison: GreaterThanThreshold
+    period: 300
+    evaluation_periods: 2
+    treat_missing_data: notBreaching
+    
+    actions:
+      alarm: ["${sns_topics.users-alerts-warning.arn}"]
+    
+    tags:
+      Domain: users
+      AlarmType: dlq-age
+      Severity: warning
+
+# ============================================
+# CloudWatch Dashboards
+# ============================================
+dashboards:
+  - name: users-domain-overview
+    description: Operational dashboard for users domain
+    
+    widgets:
+      # DLQ Metrics
+      - type: metric
+        title: DLQ Messages
+        metrics:
+          - namespace: AWS/SQS
+            name: ApproximateNumberOfMessagesVisible
+            dimensions:
+              QueueName: "${dlq.name}"
+            stat: Average
+        period: 300
+        
+      - type: metric
+        title: DLQ Message Age
+        metrics:
+          - namespace: AWS/SQS
+            name: ApproximateAgeOfOldestMessage
+            dimensions:
+              QueueName: "${dlq.name}"
+            stat: Maximum
+        period: 300
+      
+      # Lambda Metrics (aggregate)
+      - type: metric
+        title: Lambda Errors (All Functions)
+        metrics:
+          - namespace: AWS/Lambda
+            name: Errors
+            dimensions:
+              FunctionName: users-*
+            stat: Sum
+        period: 300
+      
+      - type: metric
+        title: Lambda Duration P99
+        metrics:
+          - namespace: AWS/Lambda
+            name: Duration
+            dimensions:
+              FunctionName: users-*
+            stat: p99
+        period: 300
+      
+      # Logs Insights Query
+      - type: log_query
+        title: Recent DLQ Events
+        query: |
+          fields @timestamp, functionName, @message
+          | filter @message like /error|failed|exception/
+          | sort @timestamp desc
+          | limit 20
+        log_groups:
+          - /aws/lambda/users-*
+
+# ============================================
+# IAM Policies (Shared)
+# ============================================
+iam_policies:
+  # Lambda → DLQ Access
+  - name: users-lambda-dlq-access
+    description: Allow users domain Lambdas to send messages to shared DLQ
+    
+    statements:
+      - effect: Allow
+        actions:
+          - sqs:SendMessage
+          - sqs:GetQueueUrl
+        resources:
+          - "${dlq.arn}"
+    
+    attachments:
+      roles:
+        - users-lambda-execution-role
+  
+  # SNS → Lambda (for Slack notifier)
+  - name: users-sns-lambda-invoke
+    description: Allow SNS to invoke Slack notifier Lambda
+    
+    statements:
+      - effect: Allow
+        actions:
+          - lambda:InvokeFunction
+        resources:
+          - "${lambda.slack_notifier.arn}"
+        conditions:
+          source_arn: "${sns_topics.users-alerts-critical.arn}"
+
+# ============================================
+# Metric Filters (Optional - for granularity)
+# ============================================
+metric_filters:
+  # Track DLQ messages by Lambda function
+  - name: dlq-messages-by-function
+    log_group: /aws/lambda/users-*
+    filter_pattern: '[timestamp, request_id, level=ERROR, msg="*sent to DLQ*", function_name]'
+    
+    metric_transformation:
+      namespace: CustomMetrics/Users
+      name: DLQMessagesByFunction
+      value: 1
+      dimensions:
+        FunctionName: $function_name
+      unit: Count
+    
+    alarms:
+      - name: users-{function_name}-dlq-rate
+        threshold: 5
+        period: 300
+        evaluation_periods: 1
+
+# ============================================
+# Environment-specific Overrides
+# ============================================
+environments:
+  dev:
+    dlq:
+      message_retention_seconds: 604800  # 7 days (shorter in dev)
+    
+    sns_topics:
+      users-alerts-critical:
+        subscriptions:
+          - protocol: email
+            endpoint: dev-alerts@company.com
+    
+    alarms:
+      users-dlq-messages:
+        threshold: 5  # Less sensitive in dev
+  
+  staging:
+    dlq:
+      message_retention_seconds: 1209600  # 14 days
+    
+    alarms:
+      users-dlq-messages:
+        threshold: 1
+  
+  prod:
+    dlq:
+      message_retention_seconds: 1209600  # 14 days (compliance)
+    
+    alarms:
+      users-dlq-messages:
+        threshold: 0  # Zero tolerance in prod
+        
+    dashboards:
+      - name: users-domain-overview
+        refresh_interval: 60  # Auto-refresh every minute
+
+# ============================================
+# Cost Estimation
+# ============================================
+cost_estimation:
+  monthly:
+    sqs_dlq:
+      requests: 10000  # Expected DLQ writes (failures)
+      storage_gb_hours: 1
+      cost_usd: 0.50
+    
+    sns_topics:
+      publications: 50000  # Alarm notifications
+      email_deliveries: 1000
+      cost_usd: 2.00
+    
+    cloudwatch_alarms:
+      standard_alarms: 5
+      cost_usd: 0.50  # $0.10/alarm (first 10 free)
+    
+    total_monthly_usd: 3.00
+
+# ============================================
+# Notes
+# ============================================
+notes:
+  - DLQ is shared across ALL users-* Lambda functions
+  - SNS topics are reusable for any domain alerts (not just DLQ)
+  - Metric filters are optional but recommended for troubleshooting
+  - In prod, consider adding PagerDuty/Opsgenie integration via SNS
+  - DLQ messages should be processed/replayed via separate Lambda or manual review
