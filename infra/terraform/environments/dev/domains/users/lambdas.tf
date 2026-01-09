@@ -28,10 +28,8 @@ module "users_create_lambda" {
 
   # Environment variables from spec
   environment_variables = {
-    USERS_TABLE_NAME  = module.user_table.table_name
-    LOG_LEVEL         = var.log_level
-    AWS_REGION        = var.aws_region
-    DYNAMODB_ENDPOINT = "http://172.18.0.2:4566"
+    SECRET_NAME = module.users_secrets.secret_name
+    AWS_REGION  = var.aws_region
   }
 
   # Monitoring from spec

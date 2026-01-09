@@ -15,14 +15,15 @@ module "users_iam" {
     "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
   ]
 
-  # Custom DynamoDB Policy
+  # Custom Policies
   # Permissions from: spec/domains/users/infrastructure/compute.yaml
-  # - users-create needs: PutItem, GetItem
-  # - users-get needs: GetItem, Query
-  # - users-list needs: Scan, Query
-  # - users-update needs: GetItem, UpdateItem
-  # - users-delete needs: GetItem, UpdateItem (soft delete)
   custom_policies = {
+    # DynamoDB Access
+    # - users-create needs: PutItem, GetItem
+    # - users-get needs: GetItem, Query
+    # - users-list needs: Scan, Query
+    # - users-update needs: GetItem, UpdateItem
+    # - users-delete needs: GetItem, UpdateItem (soft delete)
     dynamodb-access = {
       description = "DynamoDB access for users domain Lambda functions"
       policy_document = jsonencode({
@@ -42,6 +43,25 @@ module "users_iam" {
               module.user_table.table_arn,
               "${module.user_table.table_arn}/index/*"
             ]
+          }
+        ]
+      })
+    }
+
+    # Secrets Manager Access
+    secrets-access = {
+      description = "Secrets Manager access for users domain Lambda functions"
+      policy_document = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+          {
+            Sid    = "ReadUsersSecrets"
+            Effect = "Allow"
+            Action = [
+              "secretsmanager:GetSecretValue",
+              "secretsmanager:DescribeSecret"
+            ]
+            Resource = module.users_secrets.secret_arn
           }
         ]
       })

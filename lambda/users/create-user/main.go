@@ -11,49 +11,82 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
+// AppConfig holds the application configuration
+type AppConfig struct {
+	DynamoDBTableName string `json:"dynamodb_table_name"`
+	LogLevel          string `json:"log_level"`
+}
+
 var (
 	dynamoClient *dynamodb.Client
 	repo         *UserRepository
-	tableName    string
-	logLevel     string
+	appConfig    AppConfig
 )
 
 func init() {
-	tableName = os.Getenv("USERS_TABLE_NAME")
-	if tableName == "" {
-		log.Fatal("USERS_TABLE_NAME environment variable is required")
-	}
+	ctx := context.Background()
 
-	logLevel = os.Getenv("LOG_LEVEL")
-	if logLevel == "" {
-		logLevel = "INFO"
-	}
-
-	cfg, err := config.LoadDefaultConfig(context.TODO(),
+	// Load AWS config
+	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(os.Getenv("AWS_REGION")),
 	)
 	if err != nil {
 		panic(fmt.Sprintf("unable to load SDK config: %v", err))
 	}
 
-	// Para LocalStack
-	if endpoint := os.Getenv("DYNAMODB_ENDPOINT"); endpoint != "" {
-		dynamoClient = dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
-			o.BaseEndpoint = &endpoint
-		})
-	} else {
-		dynamoClient = dynamodb.NewFromConfig(cfg)
+	// Load configuration from Secrets Manager
+	appConfig, err = loadConfig(ctx, cfg)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	repo = NewUserRepository(dynamoClient, tableName)
+	// Initialize DynamoDB client
+	dynamoClient = dynamodb.NewFromConfig(cfg)
 
-	log.Printf("Lambda initialized - Table: %s, LogLevel: %s", tableName, logLevel)
+	// Initialize repository
+	repo = NewUserRepository(dynamoClient, appConfig.DynamoDBTableName)
+
+	log.Printf("Lambda initialized - Table: %s, LogLevel: %s", appConfig.DynamoDBTableName, appConfig.LogLevel)
+}
+
+// loadConfig loads configuration from Secrets Manager
+func loadConfig(ctx context.Context, cfg aws.Config) (AppConfig, error) {
+	secretName := os.Getenv("SECRET_NAME")
+	if secretName == "" {
+		return AppConfig{}, fmt.Errorf("SECRET_NAME environment variable is required")
+	}
+
+	// Create Secrets Manager client
+	secretsClient := secretsmanager.NewFromConfig(cfg)
+
+	// Get secret value
+	result, err := secretsClient.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: &secretName,
+	})
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("failed to get secret %s: %w", secretName, err)
+	}
+
+	// Parse secret string
+	var config AppConfig
+	if err := json.Unmarshal([]byte(*result.SecretString), &config); err != nil {
+		return AppConfig{}, fmt.Errorf("failed to parse secret: %w", err)
+	}
+
+	// Set defaults
+	if config.LogLevel == "" {
+		config.LogLevel = "INFO"
+	}
+
+	return config, nil
 }
 
 func main() {
@@ -180,7 +213,7 @@ func errorResponse(statusCode int, code, message, details string) (events.APIGat
 
 // Logging helpers
 func logInfo(message string) {
-	if logLevel == "INFO" || logLevel == "DEBUG" {
+	if appConfig.LogLevel == "INFO" || appConfig.LogLevel == "DEBUG" {
 		log.Printf("[INFO] %s", message)
 	}
 }
