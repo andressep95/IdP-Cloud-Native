@@ -1,9 +1,44 @@
+
 # ============================================
-# Users Domain - IAM Role
+# Users Read IAM Role
 # From: spec/domains/users/infrastructure/security.yaml
 # ============================================
+module "users_read_iam" {
+  source = "../../../../modules/iam"
 
-module "users_iam" {
+  domain_name = local.domain_name
+  environment = var.environment
+
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+  ]
+
+  custom_policies = {
+    dynamodb-read = {
+      description = "Read-only access to users table"
+      policy_document = jsonencode({
+        Version = "2012-10-17"
+        Statement = [{
+          Effect = "Allow"
+          Action = [
+            "dynamodb:GetItem",
+            "dynamodb:Query"
+          ]
+          Resource = [
+            module.user_table.table_arn,
+            "${module.user_table.table_arn}/index/*"
+          ]
+        }]
+      })
+    }
+  }
+}
+
+# ============================================
+# Users Write IAM Role
+# From: spec/domains/users/infrastructure/security.yaml
+# ============================================
+module "users_write_iam" {
   source = "../../../../modules/iam"
 
   domain_name = local.domain_name
@@ -12,36 +47,27 @@ module "users_iam" {
   # AWS Managed Policies
   managed_policy_arns = [
     "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-    "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
   ]
 
   # Custom Policies
   # Permissions from: spec/domains/users/infrastructure/compute.yaml
   custom_policies = {
-    # DynamoDB Access
-    # - users-create needs: PutItem, GetItem
-    # - users-get needs: GetItem, Query
-    # - users-list needs: Scan, Query
-    # - users-update needs: GetItem, UpdateItem
-    # - users-delete needs: GetItem, UpdateItem (soft delete)
+
     dynamodb-access = {
-      description = "DynamoDB access for users domain Lambda functions"
+      description = "DynamoDB access for Users write operations"
       policy_document = jsonencode({
         Version = "2012-10-17"
         Statement = [
           {
-            Sid    = "UsersTableAccess"
+            Sid    = "UsersWriteTableAccess"
             Effect = "Allow"
             Action = [
               "dynamodb:GetItem",
               "dynamodb:PutItem",
-              "dynamodb:UpdateItem",
-              "dynamodb:Query",
-              "dynamodb:Scan"
+              "dynamodb:UpdateItem"
             ]
             Resource = [
               module.user_table.table_arn,
-              "${module.user_table.table_arn}/index/*"
             ]
           }
         ]

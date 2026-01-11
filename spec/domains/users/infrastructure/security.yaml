@@ -1,35 +1,57 @@
 # IAM Roles and Policies for Users Domain
 
 iam_roles:
-  - name: users-lambda-execution-role
-    description: Execution role for all Users Lambda functions
+  # ============================================
+  # Users Write Lambda Role
+  # From: spec/domains/users/infrastructure/security.yaml
+  # ============================================
+  - name: users-write-lambda-role
+    description: Execution role for Users write operations
     service: lambda.amazonaws.com
-    
+
     managed_policies:
       - AWSLambdaBasicExecutionRole
-      - AWSXRayDaemonWriteAccess
-    
+
     inline_policies:
-      - name: dynamodb-access
+      - name: users-write-dynamodb
         actions:
-          - dynamodb:GetItem
           - dynamodb:PutItem
           - dynamodb:UpdateItem
           - dynamodb:DeleteItem
-          - dynamodb:Query
-          - dynamodb:Scan
         resources:
           - "arn:aws:dynamodb:*:*:table/idp-users"
-          - "arn:aws:dynamodb:*:*:table/idp-users/index/*"
-      
+          - "arn:aws:dynamodb:*:*:table/user_directory"
+
+      - name: users-read-before-write
+
+        actions:
+          - dynamodb:GetItem
+        resources:
+          - "arn:aws:dynamodb:*:*:table/idp-users"
+
       - name: eventbridge-access
         actions:
           - events:PutEvents
         resources:
           - "arn:aws:events:*:*:event-bus/idp-event-bus"
 
-resource_policies:
-  - resource: lambda
-    allow:
-      - principal: apigateway.amazonaws.com
-        action: lambda:InvokeFunction
+  # ============================================
+  # Users Read Lambda Role
+  # From: spec/domains/users/infrastructure/security.yaml
+  # ============================================
+  - name: users-read-lambda-role
+    description: Execution role for Users read operations
+    service: lambda.amazonaws.com
+
+    managed_policies:
+      - AWSLambdaBasicExecutionRole
+
+    inline_policies:
+      - name: users-read-dynamodb
+        actions:
+          - dynamodb:GetItem
+          - dynamodb:Query
+        resources:
+          - "arn:aws:dynamodb:*:*:table/idp-users"
+          - "arn:aws:dynamodb:*:*:table/user_directory"
+          - "arn:aws:dynamodb:*:*:table/user_directory/index/*"
