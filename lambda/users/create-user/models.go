@@ -29,17 +29,17 @@ type Links struct {
 
 // User represents the complete user entity stored in DynamoDB
 type User struct {
-	UserID      string                 `dynamodbav:"userId"`
-	Email       string                 `dynamodbav:"email"`
-	PasswordHash string                `dynamodbav:"passwordHash"`
-	FirstName   string                 `dynamodbav:"firstName"`
-	LastName    string                 `dynamodbav:"lastName"`
-	PhoneNumber string                 `dynamodbav:"phoneNumber,omitempty"`
-	Status      string                 `dynamodbav:"status"`
-	EntityType  string                 `dynamodbav:"entityType"`
-	Metadata    map[string]interface{} `dynamodbav:"metadata,omitempty"`
-	CreatedAt   string                 `dynamodbav:"createdAt"`
-	UpdatedAt   string                 `dynamodbav:"updatedAt"`
+	UserID       string                 `dynamodbav:"userId"`
+	Email        string                 `dynamodbav:"email"`
+	PasswordHash string                 `dynamodbav:"passwordHash"`
+	FirstName    string                 `dynamodbav:"firstName"`
+	LastName     string                 `dynamodbav:"lastName"`
+	PhoneNumber  string                 `dynamodbav:"phoneNumber,omitempty"`
+	Status       string                 `dynamodbav:"status"`
+	EntityType   string                 `dynamodbav:"entityType"`
+	Metadata     map[string]interface{} `dynamodbav:"metadata,omitempty"`
+	CreatedAt    string                 `dynamodbav:"createdAt"`
+	UpdatedAt    string                 `dynamodbav:"updatedAt"`
 }
 
 // ErrorResponse represents an error response
@@ -47,4 +47,13 @@ type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Details string `json:"details,omitempty"`
+}
+
+type UserDirectoryEntry struct {
+	DirectoryShard  string `dynamodbav:"directoryShard"`
+	CreatedAtUserId string `dynamodbav:"createdAtUserId"`
+	UserID          string `dynamodbav:"userId"`
+	Email           string `dynamodbav:"email"`
+	Status          string `dynamodbav:"status"`
+	CreatedAt       string `dynamodbav:"createdAt"`
 }

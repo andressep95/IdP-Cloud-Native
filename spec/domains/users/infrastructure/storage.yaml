@@ -95,6 +95,26 @@ tables:
     local_secondary_indexes: []
 
     # ============================================
+    # CONSTRAINTS & GUARANTEES
+    # ============================================
+    constraints:
+      email_uniqueness:
+        description: >
+          Email uniqueness is enforced at application level using a GSI lookup
+          on email-index. DynamoDB does not provide native uniqueness guarantees
+          on secondary indexes.
+        enforcement:
+          type: application_level
+          mechanism:
+            - Query on email-index before creation
+            - Conflict handling at API level
+        consistency:
+          model: eventual
+          notes: >
+            Rare race conditions may occur under concurrent requests and are
+            handled by the API returning HTTP 409 Conflict.
+
+    # ============================================
     # FEATURES
     # ============================================
     ttl:

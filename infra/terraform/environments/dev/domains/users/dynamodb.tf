@@ -87,11 +87,7 @@ module "user_directory_table" {
 
   attributes = [
     { name = "directoryShard", type = "S" },
-    { name = "createdAtUserId", type = "S" },
-    { name = "userId", type = "S" },
-    { name = "email", type = "S" },
-    { name = "status", type = "S" },
-    { name = "createdAt", type = "S" }
+    { name = "createdAtUserId", type = "S" }
   ]
 
   tags = merge(var.common_tags, {

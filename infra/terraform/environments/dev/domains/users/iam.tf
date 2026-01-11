@@ -6,8 +6,9 @@
 module "users_read_iam" {
   source = "../../../../modules/iam"
 
-  domain_name = local.domain_name
-  environment = var.environment
+  domain_name  = local.domain_name
+  role_purpose = "read"
+  environment  = var.environment
 
   managed_policy_arns = [
     "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -25,8 +26,8 @@ module "users_read_iam" {
             "dynamodb:Query"
           ]
           Resource = [
-            module.user_table.table_arn,
-            "${module.user_table.table_arn}/index/*"
+            module.users_table.table_arn,
+            "${module.users_table.table_arn}/index/*"
           ]
         }]
       })
@@ -41,8 +42,9 @@ module "users_read_iam" {
 module "users_write_iam" {
   source = "../../../../modules/iam"
 
-  domain_name = local.domain_name
-  environment = var.environment
+  domain_name  = local.domain_name
+  role_purpose = "write"
+  environment  = var.environment
 
   # AWS Managed Policies
   managed_policy_arns = [
@@ -67,7 +69,7 @@ module "users_write_iam" {
               "dynamodb:UpdateItem"
             ]
             Resource = [
-              module.user_table.table_arn,
+              module.users_table.table_arn,
             ]
           }
         ]

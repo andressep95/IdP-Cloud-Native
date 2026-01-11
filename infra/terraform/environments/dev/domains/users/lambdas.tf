@@ -16,7 +16,7 @@ module "users_create_lambda" {
   filename         = abspath("${path.root}/../../../../lambda/users/create-user/function.zip")
   source_code_hash = fileexists(abspath("${path.root}/../../../../lambda/users/create-user/function.zip")) ? filebase64sha256(abspath("${path.root}/../../../../lambda/users/create-user/function.zip")) : null
 
-  role_arn     = module.users_iam.role_arn
+  role_arn     = module.users_write_iam.role_arn
   handler      = "bootstrap"
   runtime      = "provided.al2023"
   architecture = "arm64"
@@ -97,7 +97,7 @@ resource "aws_lambda_permission" "users_create_apigw" {
   action        = "lambda:InvokeFunction"
   function_name = module.users_create_lambda.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${var.api_gateway_execution_arn}/*/*/users"
+  source_arn    = "${var.api_gateway_execution_arn}/POST/users"
 }
 
 # ============================================

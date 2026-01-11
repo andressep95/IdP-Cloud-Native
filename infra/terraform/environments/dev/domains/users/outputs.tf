@@ -5,23 +5,21 @@
 # DynamoDB
 output "dynamodb_table_name" {
   description = "Name of the users DynamoDB table"
-  value       = module.user_table.table_name
+  value       = module.users_table.table_name
 }
 
 output "dynamodb_table_arn" {
   description = "ARN of the users DynamoDB table"
-  value       = module.user_table.table_arn
+  value       = module.users_table.table_arn
 }
 
 # IAM
-output "iam_role_arn" {
-  description = "ARN of the users IAM role"
-  value       = module.users_iam.role_arn
+output "users_write_role_arn" {
+  value = module.users_write_iam.role_arn
 }
 
-output "iam_role_name" {
-  description = "Name of the users IAM role"
-  value       = module.users_iam.role_name
+output "users_write_role_name" {
+  value = module.users_write_iam.role_name
 }
 
 # Lambda Functions

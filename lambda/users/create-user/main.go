@@ -21,8 +21,9 @@ import (
 
 // AppConfig holds the application configuration
 type AppConfig struct {
-	DynamoDBTableName string `json:"dynamodb_table_name"`
-	LogLevel          string `json:"log_level"`
+	UsersTableName         string `json:"users_table_name"`
+	UserDirectoryTableName string `json:"user_directory_table_name"`
+	LogLevel               string `json:"log_level"`
 }
 
 var (
@@ -52,9 +53,19 @@ func init() {
 	dynamoClient = dynamodb.NewFromConfig(cfg)
 
 	// Initialize repository
-	repo = NewUserRepository(dynamoClient, appConfig.DynamoDBTableName)
+	repo = NewUserRepository(
+		dynamoClient,
+		appConfig.UsersTableName,
+		appConfig.UserDirectoryTableName,
+	)
 
-	log.Printf("Lambda initialized - Table: %s, LogLevel: %s", appConfig.DynamoDBTableName, appConfig.LogLevel)
+	log.Printf(
+		"Lambda initialized - UsersTable: %s, UserDirectoryTable: %s, LogLevel: %s",
+		appConfig.UsersTableName,
+		appConfig.UserDirectoryTableName,
+		appConfig.LogLevel,
+	)
+
 }
 
 // loadConfig loads configuration from Secrets Manager

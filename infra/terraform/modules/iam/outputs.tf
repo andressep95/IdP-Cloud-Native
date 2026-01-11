@@ -30,3 +30,8 @@ output "custom_policy_names" {
     for k, v in aws_iam_policy.custom_policies : k => v.name
   }
 }
+
+variable "role_purpose" {
+  description = "Purpose of the role (read, write, admin, etc)"
+  type        = string
+}

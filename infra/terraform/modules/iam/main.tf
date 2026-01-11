@@ -3,11 +3,11 @@
 # ============================================
 
 resource "aws_iam_role" "lambda_execution" {
-  name               = "${var.domain_name}-lambda-execution-${var.environment}"
+  name               = "${var.domain_name}-${var.role_purpose}-lambda-${var.environment}"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
-
-  tags = var.tags
+  tags               = var.tags
 }
+
 
 # Trust Policy
 data "aws_iam_policy_document" "lambda_assume_role" {

@@ -24,12 +24,8 @@ output "users_dynamodb_table_arn" {
   value       = module.users_domain.dynamodb_table_arn
 }
 
-output "users_iam_role_arn" {
-  description = "Users IAM role ARN"
-  value       = module.users_domain.iam_role_arn
-}
 
-output "users_lambda_function_arns" {
+output "users_write_lambda_function_arns" {
   description = "Users Lambda function ARNs"
   value       = module.users_domain.lambda_function_arns
 }

@@ -9,17 +9,16 @@ module "users_secrets" {
   description = "Configuration secrets for users domain"
 
   secret_value = {
-    # Database configuration
-    dynamodb_table_name = module.user_table.table_name
+    # Source of Truth
+    users_table_name = module.users_table.table_name
+
+    # Materialized View
+    user_directory_table_name = module.user_directory_table.table_name
 
     # Application configuration
     log_level = var.log_level
-
-    # Add more secrets here as needed:
-    # jwt_secret_key = "your-jwt-secret"
-    # encryption_key = "your-encryption-key"
-    # third_party_api_key = "your-api-key"
   }
+
 
   recovery_window_in_days = 0 # For dev, immediate deletion. For prod, use 7 or 30
 
